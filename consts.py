@@ -1,0 +1,2 @@
+TENANT_CD = 'tenant1'
+PADDING = 20

@@ -2,141 +2,146 @@ import cv2
 import mediapipe as mp
 import requests
 import queue
-import time
 import threading
-import numpy as np
-import concurrent.futures
+from consts import TENANT_CD, PADDING
 
 GAP_TIME = 1
 LOCKED = False
-# Khởi tạo MediaPipe Face Detection
-mp_face_detection = mp.solutions.face_detection
-face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.5)
+SHOW_FACEMESH = False
+COLLECTING = False
 
 # Khởi tạo MediaPipe Face Landmark để trích xuất đặc điểm khuôn mặt
 mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5, 
+                                   max_num_faces=3)
+face_mesh_one = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+
+mp_drawing = mp.solutions.drawing_utils
 
 # Mở camera
 cap = cv2.VideoCapture(0)
 
-last_request_time = 0
-
 # Biến lưu kết quả nhận diện từ chế độ nhận dạng (mode nhận diện thường)
-recognized_name = "Processing..."
 request_queue = queue.Queue()  # Hàng đợi request cho nhận diện
+
+# Bien lưu kết quả nhận diện từ chế độ thêm nhân viên (mode thêm nhân viên)
+interval_step = 20
+current_interval = 0
+image_to_save = []
+new_employeedetect_face_crop_id = None
+
+# Biến lưu kết quả nhận diện
+recorgnized = ''
 
 def send_to_server():
     """Gửi ảnh lên server từ queue để nhận diện khuôn mặt"""
-    global recognized_name
-    global LOCKED
+    global LOCKED, recorgnized
     while True:
-        face_img = request_queue.get()
-        if face_img is None or LOCKED:
+        face_imgs = request_queue.get()
+        if face_imgs is None or LOCKED:
             continue
-
-        _, img_encoded = cv2.imencode('.jpg', face_img)
+        
+        files = {}
+        for idx, img in enumerate(face_imgs):
+            _, img_encoded = cv2.imencode('.jpg', img)
+            files[f"image{idx}"] = ("image.jpg", img_encoded.tobytes(), "image/jpeg")
         print('SEND')
         LOCKED = True
-        response = requests.post("http://localhost:5000/recognize", 
-                                 files={"image": img_encoded.tobytes()},
-                                 timeout=2)
-        LOCKED = False
-        print('================')
-        recognized_name = response.text  # Cập nhật kết quả nhận diện
+        try:
+            response = requests.post("http://localhost:5000/recognize", 
+                                    files=files,
+                                    data={"tenant_cd": TENANT_CD})
+            LOCKED = False
+            if response.status_code != 200:
+                print("Error:", response.status_code, response.text)
+                continue
+            
+            results = response.json().get("results")
+            print("Nhân viên nhận diện:", results)
+            
+            recorgnized = ', '.join([x['party_id'] for x in results])
+        except Exception as e:
+            print("Error sending request:", e)
+            LOCKED = False
 
-def capture_face_crop(frame):
+def detect_face_crop(frame, collecting=False, show_face_mesh=False):
     """
     Dùng MediaPipe để phát hiện khuôn mặt và cắt vùng khuôn mặt đầu tiên.
     Trả về ảnh khuôn mặt (nếu phát hiện) hoặc None.
     """
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = face_detection.process(rgb_frame)
-    if results.detections:
-        # Lấy khuôn mặt đầu tiên
-        detection = results.detections[0]
-        bboxC = detection.location_data.relative_bounding_box
+    if not collecting:
+        results = face_mesh.process(rgb_frame)
+    else:
+        results = face_mesh_one.process(rgb_frame)
+
+    if results.multi_face_landmarks:
+        face_imgs = []
         h, w, _ = frame.shape
-        x = int(bboxC.xmin * w)
-        y = int(bboxC.ymin * h)
-        w_box = int(bboxC.width * w)
-        h_box = int(bboxC.height * h)
-        # Kiểm tra giới hạn ảnh
-        if x < 0 or y < 0 or x+w_box > w or y+h_box > h:
-            return None
-        return frame[y:y+h_box, x:x+w_box]
+        for face_landmarks in results.multi_face_landmarks:
+            landmarks = face_landmarks.landmark
+            xs = [int(lm.x * w) for lm in landmarks]
+            ys = [int(lm.y * h) for lm in landmarks]
+            x_min, x_max = max(min(xs) - PADDING, 0), min(max(xs) + PADDING, w)
+            y_min, y_max = max(min(ys) - PADDING, 0), min(max(ys) + PADDING, h)
+            
+            if show_face_mesh:
+                mp_drawing.draw_landmarks(frame, face_landmarks, mp_face_mesh.FACEMESH_CONTOURS,
+                                          mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=1),
+                                        mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=1))
+            
+            cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+            face_img = rgb_frame[y_min:y_max, x_min:x_max]
+            cv2.resize(face_img, (160, 160))
+            if collecting:
+                global current_interval
+                current_interval += 1
+                if current_interval % interval_step == 0:
+                    image_to_save.append(face_img.copy())
+                
+            else:
+                face_imgs.append(face_img)
+        return face_imgs
     return None
 
-def capture_multiple_images(num_images=5, delay=1.0):
-    """
-    Thu thập nhiều hình khuôn mặt từ camera.
-    - num_images: số hình cần thu thập.
-    - delay: khoảng thời gian giữa các lần chụp (giây).
-    Trả về danh sách các ảnh khuôn mặt (đã crop) được thu thập.
-    """
-    images = []
-    count = 0
-    print(f"Đang thu thập {num_images} hình cho nhân viên mới...")
-    while count < num_images:
-        ret, frame = cap.read()
-        if not ret:
-            continue
-        # Lấy khuôn mặt từ frame nếu có
-        face_crop = capture_face_crop(frame)
-        if face_crop is not None:
-            images.append(face_crop.copy())
-            count += 1
-            print(f"Đã thu thập hình {count}/{num_images}")
-            # time.sleep(delay)
-        # Hiển thị luồng video khi thu thập hình
-        cv2.imshow("Face Detection", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-    return images
-
-def add_employee(party_id, images):
+def add_employee():
+    global new_employee_id, image_to_save
     """
     Gửi request thêm nhân viên mới đến server.
     - party_id: mã nhân viên.
     - images: danh sách hình khuôn mặt đã thu thập.
     Các hình được gửi qua multiple file uploads với key image0, image1,...
     """
-    if not images:
+    if not image_to_save:
         print("Không thu thập được hình hợp lệ!")
         return
     files = {}
-    for idx, img in enumerate(images):
+    for idx, img in enumerate(image_to_save):
         _, img_encoded = cv2.imencode('.jpg', img)
         files[f"image{idx}"] = ("image.jpg", img_encoded.tobytes(), "image/jpeg")
-    data = {"party_id": party_id}
+    data = {
+        "party_id": new_employee_id,
+        "tenant_cd": TENANT_CD,
+    }
     try:
-        response = requests.post("http://localhost:5000/add_employee", files={"image": img_encoded.tobytes()}, data=data)
+        response = requests.post("http://localhost:5000/add_employee", files=files, data=data)
         print("Response from add_employee:", response.json())
     except Exception as e:
         print("Error adding employee:", e)
+    finally:
+        clear_data_to_add()
 
-# # # Chạy gửi request song song cho nhận diện
-# executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
-# executor.submit(send_to_server)
+def clear_data_to_add():
+    global image_to_save, new_employee_id, current_interval
+    new_employee_id
+    image_to_save.clear()
+    current_interval = 0
 
 # Khởi chạy thread gửi request
 thread = threading.Thread(target=send_to_server, daemon=True)
 thread.start()
 
-
-def calculate_euclidean_distance(point1, point2):
-    return np.linalg.norm(np.array(point1) - np.array(point2))
-
-def compare_faces(landmarks1, landmarks2):
-    distances = []
-    for i in range(len(landmarks1)):
-        point1 = [landmarks1[i].x, landmarks1[i].y, landmarks1[i].z]
-        point2 = [landmarks2[i].x, landmarks2[i].y, landmarks2[i].z]
-        distance = calculate_euclidean_distance(point1, point2)
-        distances.append(distance)
-    
-    return np.mean(distances)  # Trả về khoảng cách trung bình giữa các điểm
-
+thread_add_employee = threading.Thread(target=add_employee, daemon=True)
 
 print("Nhấn 'a' để thêm nhân viên mới, 'q' để thoát.")
 while cap.isOpened():
@@ -145,47 +150,40 @@ while cap.isOpened():
         break
 
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = face_detection.process(rgb_frame)
+    results = face_mesh.process(rgb_frame)
 
-    # Chế độ nhận diện thông thường
-    if results.detections:
-        for detection in results.detections:
-            bboxC = detection.location_data.relative_bounding_box
-            h, w, _ = frame.shape
-            x = int(bboxC.xmin * w)
-            y = int(bboxC.ymin * h)
-            w_box = int(bboxC.width * w)
-            h_box = int(bboxC.height * h)
-
-            # Cắt ảnh khuôn mặt
-            face_img = frame[y:y+h_box, x:x+w_box]
-            if not LOCKED:
-                request_queue.put(face_img)
-
-            # Vẽ khung nhận diện và tên nhận diện
-            cv2.rectangle(frame, (x, y), (x + w_box, y + h_box), (0, 255, 0), 2)
-            cv2.putText(frame, recognized_name, (x, y - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-    else:
-        recognized_name = "Processing..."
+    face_imgs = detect_face_crop(frame, collecting = COLLECTING, show_face_mesh=SHOW_FACEMESH)
+    if COLLECTING:
+        count = len(image_to_save)
+        cv2.putText(frame, f"Captured {count} image{'s' if count > 1 else ''}", (10, 30),
+            cv2.FONT_HERSHEY_DUPLEX, 1, (0, 255, 0), 2)
+    elif face_imgs is not None:
+        if not LOCKED:
+            request_queue.put(face_imgs)
+        if not COLLECTING:
+            cv2.putText(frame, recorgnized, (10, 30), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 255, 0), 2)
+    else: 
+        cv2.putText(frame, 'Unknown', (10, 30), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 255), 1)
     cv2.imshow("Face Detection", frame)
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
-    # Khi nhấn 'a', chuyển sang chế độ thêm nhân viên mới
-    elif key == ord('b'):
-        cv2.imwrite('test.jpg', face_img)
+    elif key == ord('1'):
+        SHOW_FACEMESH = not SHOW_FACEMESH
     elif key == ord('a'):
-        print("Chế độ thêm nhân viên mới được kích hoạt.")
-        # Dừng tạm thời việc gửi ảnh nhận diện (nếu cần)
-        # Yêu cầu nhập tên nhân viên mới
-        new_name = input("Nhập tên nhân viên mới: ").strip()
-        if new_name:
-            # Thu thập nhiều hình (ví dụ 5 hình)
-            new_images = capture_multiple_images(num_images=5, delay=1.0)
-            add_employee(new_name, new_images)
-        else:
+        COLLECTING = True
+        print("Chế độ thêm nhân viên mới đã được bật.")
+        new_employee_id = input("Nhập tên nhân viên mới: ").strip()
+        if new_employee_id == '':
             print("Tên nhân viên không hợp lệ.")
+            continue
+    elif key == ord('s') and COLLECTING:
+        COLLECTING = False
+        thread_add_employee.start()
+    elif key == ord('c') and COLLECTING:
+        COLLECTING = False
+        clear_data_to_add()
+        
 
 # Kết thúc chương trình
 request_queue.put(None)  # Để dừng thread xử lý request

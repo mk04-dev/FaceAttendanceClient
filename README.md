@@ -33,6 +33,15 @@
     python main.py
 ```
 
-
 </details>
 
+<details open>
+<summary>Controll keys</summary>
+
+- Q: Stop program
+- 1: Show face mesh
+- A: Activate add new employee data mode
+- S: Save new employee data [Add mode]
+- C: Cancel add new employee data [Add mode]
+
+</details>
