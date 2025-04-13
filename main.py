@@ -3,7 +3,7 @@ import mediapipe as mp
 import requests
 import queue
 import threading
-from consts import TENANT_CD, PADDING
+from consts import TENANT_CD, PADDING, GEO_POINT_ID, BRANCH_ID
 
 GAP_TIME = 1
 LOCKED = False
@@ -50,7 +50,11 @@ def send_to_server():
         try:
             response = requests.post("http://localhost:5000/recognize", 
                                     files=files,
-                                    data={"tenant_cd": TENANT_CD})
+                                    data={
+                                        "tenant_cd": TENANT_CD,
+                                        "geo_point_id": GEO_POINT_ID,
+                                        "branch_id": BRANCH_ID,
+                                    })
             LOCKED = False
             if response.status_code != 200:
                 print("Error:", response.status_code, response.text)
