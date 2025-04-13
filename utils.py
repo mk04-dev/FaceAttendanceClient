@@ -1,4 +1,22 @@
 import numpy as np
+import cv2
+from consts import STRAIGHT, LEFT, RIGHT, UP, DOWN, RLEFT, RRIGHT
+# Các điểm chuẩn từ Mediapipe Face Mesh
+LANDMARK_INDEXES = [1, 152, 263, 33, 287, 57]
+
+# 3D model points (tạm định nghĩa theo mô hình đầu người)
+MODEL_POINTS = np.array([
+    [0.0, 0.0, 0.0],           # Nose tip
+    [0.0, -63.6, -12.5],       # Chin
+    [-43.3, 32.7, -26.0],      # Left eye left corner
+    [43.3, 32.7, -26.0],       # Right eye right corner
+    [-28.9, -28.9, -24.1],     # Left mouth corner
+    [28.9, -28.9, -24.1]       # Right mouth corner
+])
+
+DEGREE_X = 45
+DEGREE_Y = 20
+DEGREE = 30
 
 def get_face_size(landmarks, image_shape):
     x_coords = [lm.x for lm in landmarks]
@@ -121,3 +139,55 @@ def estimate_yaw_pitch_from_nose_chin(landmarks, image_shape):
     print(f"Yaw: {yaw}, Pitch: {pitch}")
 
     return yaw, pitch
+
+
+def get_head_pose(landmarks, image_shape):
+    image_height, image_width = image_shape[:2]
+    image_points = []
+
+    for idx in LANDMARK_INDEXES:
+        lm = landmarks[idx]
+        x = int(lm.x * image_width)
+        y = int(lm.y * image_height)
+        image_points.append((x, y))
+
+    image_points = np.array(image_points, dtype="double")
+
+    focal_length = image_width
+    center = (image_width / 2, image_height / 2)
+    camera_matrix = np.array([
+        [focal_length, 0, center[0]],
+        [0, focal_length, center[1]],
+        [0, 0, 1]
+    ], dtype="double")
+
+    dist_coeffs = np.zeros((4, 1))  # Không distortion
+
+    success, rotation_vector, translation_vector = cv2.solvePnP(
+        MODEL_POINTS, image_points, camera_matrix, dist_coeffs, flags=cv2.SOLVEPNP_ITERATIVE)
+
+    # Chuyển sang ma trận xoay
+    rotation_mat, _ = cv2.Rodrigues(rotation_vector)
+    angles, _, _, _, _, _ = cv2.RQDecomp3x3(rotation_mat)
+    pitch, yaw, roll = angles  # Đơn vị: độ
+
+    if abs(yaw) < DEGREE_X and abs(pitch) < DEGREE_Y and abs(roll - 180) < DEGREE:
+        return [STRAIGHT]
+    
+    direction = []
+    if yaw > DEGREE_X:
+        direction.append(RIGHT)
+    elif yaw < -DEGREE_X:
+        direction.append(LEFT)
+
+    if pitch > DEGREE_Y:
+        direction.append(DOWN)
+    elif pitch < -DEGREE_Y:
+        direction.append(UP)
+        
+    if roll - 180 > DEGREE:
+        direction.append(RRIGHT)
+    elif roll - 180 < -DEGREE:
+        direction.append(RLEFT)
+
+    return direction

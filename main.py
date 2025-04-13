@@ -3,8 +3,8 @@ import mediapipe as mp
 import requests
 import queue
 import threading
-from consts import TENANT_CD, PADDING, GEO_POINT_ID, BRANCH_ID
-
+from consts import TENANT_CD, GEO_POINT_ID, BRANCH_ID, PADDING, STRAIGHT, LEFT, RIGHT, UP, DOWN
+from utils import get_head_pose
 GAP_TIME = 1
 LOCKED = False
 SHOW_FACEMESH = False
@@ -28,6 +28,7 @@ request_queue = queue.Queue()  # Hàng đợi request cho nhận diện
 interval_step = 20
 current_interval = 0
 image_to_save = []
+direction_to_save = []
 new_employeedetect_face_crop_id = None
 
 # Biến lưu kết quả nhận diện
@@ -98,10 +99,15 @@ def detect_face_crop(frame, collecting=False, show_face_mesh=False):
             face_img = rgb_frame[y_min:y_max, x_min:x_max]
             cv2.resize(face_img, (160, 160))
             if collecting:
-                global current_interval
-                current_interval += 1
-                if current_interval % interval_step == 0:
+                position = get_head_pose(landmarks, frame.shape)
+                if addCropByFaceDirect(position):
+                    print("Đã thêm ảnh khuôn mặt")
                     image_to_save.append(face_img.copy())
+                # global current_interval
+                # current_interval += 1
+                # if current_interval % interval_step == 0:
+                #     image_to_save.append(face_img.copy())
+                
                 
             else:
                 face_imgs.append(face_img)
@@ -141,6 +147,39 @@ def clear_data_to_add():
     image_to_save.clear()
     current_interval = 0
 
+def addCropByFaceDirect(position):
+    if STRAIGHT in position and STRAIGHT not in direction_to_save:
+        direction_to_save.append(STRAIGHT)
+        return True
+    elif LEFT in position and LEFT not in direction_to_save:
+        direction_to_save.append(LEFT)
+        return True
+    elif RIGHT in position and RIGHT not in direction_to_save:
+        direction_to_save.append(RIGHT)
+        return True
+    elif UP in position and UP not in direction_to_save:
+        direction_to_save.append(UP)
+        return True
+    elif DOWN in position and DOWN not in direction_to_save:
+        direction_to_save.append(DOWN)
+        return True
+    return False
+
+def putTextByFaceDirect(frame):
+    if STRAIGHT not in direction_to_save:
+        putText2Frame(frame, "Please look straight at the camera")
+    elif RIGHT not in direction_to_save:
+        putText2Frame(frame, "Please look to the right")
+    elif LEFT not in direction_to_save:
+        putText2Frame(frame, "Please look to the left")
+    elif UP not in direction_to_save:
+        putText2Frame(frame, "Please look to the up")
+    elif DOWN not in direction_to_save:
+        putText2Frame(frame, "Please look to the down")
+
+def putText2Frame(frame, text, color=(0, 255, 0)):
+    cv2.putText(frame, text, (10, 30), cv2.FONT_HERSHEY_DUPLEX, 1, color, 2)
+
 # Khởi chạy thread gửi request
 thread = threading.Thread(target=send_to_server, daemon=True)
 thread.start()
@@ -158,16 +197,17 @@ while cap.isOpened():
 
     face_imgs = detect_face_crop(frame, collecting = COLLECTING, show_face_mesh=SHOW_FACEMESH)
     if COLLECTING:
-        count = len(image_to_save)
-        cv2.putText(frame, f"Captured {count} image{'s' if count > 1 else ''}", (10, 30),
-            cv2.FONT_HERSHEY_DUPLEX, 1, (0, 255, 0), 2)
+        putTextByFaceDirect(frame)
+        # count = len(image_to_save)
+        # cv2.putText(frame, f"Captured {count} image{'s' if count > 1 else ''}", (10, 30),
+        #     cv2.FONT_HERSHEY_DUPLEX, 1, (0, 255, 0), 2)
     elif face_imgs is not None:
         if not LOCKED:
             request_queue.put(face_imgs)
         if not COLLECTING:
-            cv2.putText(frame, recorgnized, (10, 30), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 255, 0), 2)
+            putText2Frame(frame, recorgnized)
     else: 
-        cv2.putText(frame, 'Unknown', (10, 30), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 255), 1)
+        putText2Frame(frame, "Unknown", (0, 0, 255))
     cv2.imshow("Face Detection", frame)
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
@@ -181,11 +221,13 @@ while cap.isOpened():
         if new_employee_id == '':
             print("Tên nhân viên không hợp lệ.")
             continue
-    elif key == ord('s') and COLLECTING:
+    elif (key == ord('s') and COLLECTING) or len(direction_to_save) == 5:
         COLLECTING = False
+        direction_to_save.clear()
         thread_add_employee.start()
     elif key == ord('c') and COLLECTING:
         COLLECTING = False
+        direction_to_save.clear()
         clear_data_to_add()
         
 
