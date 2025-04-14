@@ -5,6 +5,8 @@ import queue
 import threading
 from consts import TENANT_CD, GEO_POINT_ID, BRANCH_ID, PADDING, STRAIGHT, LEFT, RIGHT, UP, DOWN
 from utils import get_head_pose
+import json
+
 GAP_TIME = 1
 LOCKED = False
 SHOW_FACEMESH = False
@@ -67,6 +69,7 @@ def send_to_server():
             
             recorgnized = ', '.join([x['party_id'] for x in results])
         except Exception as e:
+            recorgnized = 'Unknown'
             print("Error sending request:", e)
             LOCKED = False
 
