@@ -46,7 +46,8 @@ def send_to_server():
         for idx, img in enumerate(face_imgs):
             _, img_encoded = cv2.imencode('.jpg', img)
             files[f"image{idx}"] = ("image.jpg", img_encoded.tobytes(), "image/jpeg")
-        print('SEND')
+        
+        print(f'Send {len(files)} images to server')
         LOCKED = True
         try:
             response = requests.post("http://localhost:5000/recognize", 
@@ -135,11 +136,33 @@ def add_employee():
     }
     try:
         response = requests.post("http://localhost:5000/add_employee", files=files, data=data)
-        print("Response from add_employee:", response.json())
+        if response.status_code != 200:
+            print("Error:", response.status_code, response.text)
+        else:
+            print(response.json())
     except Exception as e:
         print("Error adding employee:", e)
     finally:
         clear_data_to_add()
+
+def delete_employee():
+    global del_emp_id
+    """
+    Gửi request xóa nhân viên đến server.
+    - party_id: mã nhân viên.
+    """
+    if not del_emp_id:
+        return
+    try:
+        response = requests.delete(f"http://localhost:5000/delete_employee/{TENANT_CD}/{del_emp_id}")
+        if response.status_code != 200:
+            print("Error:", response.status_code, response.text)
+        else:
+            print("Xóa nhân viên thành công:", del_emp_id)
+    except Exception as e:
+        print("Error removing employee:", e)
+    finally:
+        del_emp_id = None
 
 def clear_data_to_add():
     global image_to_save, new_employee_id, current_interval
@@ -185,6 +208,7 @@ thread = threading.Thread(target=send_to_server, daemon=True)
 thread.start()
 
 thread_add_employee = threading.Thread(target=add_employee, daemon=True)
+thread_del_employee = threading.Thread(target=delete_employee, daemon=True)
 
 print("Nhấn 'a' để thêm nhân viên mới, 'q' để thoát.")
 while cap.isOpened():
@@ -217,9 +241,9 @@ while cap.isOpened():
     elif key == ord('a'):
         COLLECTING = True
         print("Chế độ thêm nhân viên mới đã được bật.")
-        new_employee_id = input("Nhập tên nhân viên mới: ").strip()
+        new_employee_id = input("Nhập mã nv: ").strip() # Party ID của nv trong tenant
         if new_employee_id == '':
-            print("Tên nhân viên không hợp lệ.")
+            print("Mã nhân viên không hợp lệ.")
             continue
     elif (key == ord('s') and COLLECTING) or len(direction_to_save) == 5:
         COLLECTING = False
@@ -229,8 +253,9 @@ while cap.isOpened():
         COLLECTING = False
         direction_to_save.clear()
         clear_data_to_add()
-        
-
+    elif key == ord('d'):
+        del_emp_id = input("Nhập mã nhân viên để xóa: ").strip()
+        thread_del_employee.start()
 # Kết thúc chương trình
 request_queue.put(None)  # Để dừng thread xử lý request
 cap.release()
