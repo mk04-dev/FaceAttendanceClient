@@ -45,3 +45,10 @@
 - C: Cancel add new employee data [Add mode]
 
 </details>
+
+<details open>
+<summary>Notic</summary>
+
+- Edit branch info in consts.py
+
+</details>

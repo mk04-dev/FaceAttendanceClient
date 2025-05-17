@@ -3,7 +3,7 @@ import mediapipe as mp
 import requests
 import queue
 import threading
-from consts import TENANT_CD, GEO_POINT_ID, BRANCH_ID, PADDING, STRAIGHT, LEFT, RIGHT, UP, DOWN
+from consts import TENANT_CD, GEO_POINT_ID, BRANCH_ID, PADDING, STRAIGHT, LEFT, RIGHT, UP, DOWN, ADDRESS, HOST
 from utils import get_head_pose
 import json
 
@@ -52,11 +52,11 @@ def send_to_server():
         print(f'Send {len(files)} images to server')
         LOCKED = True
         try:
-            response = requests.post("http://localhost:5000/recognize", 
+            response = requests.post(f"{HOST}/recognize", 
                                     files=files,
                                     data={
                                         "tenant_cd": TENANT_CD,
-                                        "geo_point_id": GEO_POINT_ID,
+                                        "address": json.dumps(ADDRESS),
                                         "branch_id": BRANCH_ID,
                                     })
             LOCKED = False
@@ -138,7 +138,7 @@ def add_employee():
         "tenant_cd": TENANT_CD,
     }
     try:
-        response = requests.post("http://localhost:5000/add_employee", files=files, data=data)
+        response = requests.post(f"{HOST}/add_employee", files=files, data=data)
         if response.status_code != 200:
             print("Error:", response.status_code, response.text)
         else:
@@ -157,7 +157,7 @@ def delete_employee():
     if not del_emp_id:
         return
     try:
-        response = requests.delete(f"http://localhost:5000/delete_employee/{TENANT_CD}/{del_emp_id}")
+        response = requests.delete(f"{HOST}/delete_employee/{TENANT_CD}/{del_emp_id}")
         if response.status_code != 200:
             print("Error:", response.status_code, response.text)
         else:
