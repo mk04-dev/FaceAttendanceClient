@@ -210,8 +210,8 @@ def putText2Frame(frame, text, color=(0, 255, 0)):
 thread = threading.Thread(target=send_to_server, daemon=True)
 thread.start()
 
-thread_add_employee = threading.Thread(target=add_employee, daemon=True)
-thread_del_employee = threading.Thread(target=delete_employee, daemon=True)
+# thread_add_employee = threading.Thread(target=add_employee, daemon=True)
+# thread_del_employee = threading.Thread(target=delete_employee, daemon=True)
 
 print("Nhấn 'a' để thêm nhân viên mới, 'q' để thoát.")
 while cap.isOpened():
@@ -251,14 +251,14 @@ while cap.isOpened():
     elif (key == ord('s') and COLLECTING) or len(direction_to_save) == 5:
         COLLECTING = False
         direction_to_save.clear()
-        thread_add_employee.start()
+        threading.Thread(target=add_employee, daemon=True).start()
     elif key == ord('c') and COLLECTING:
         COLLECTING = False
         direction_to_save.clear()
         clear_data_to_add()
     elif key == ord('d'):
         del_emp_id = input("Nhập mã nhân viên để xóa: ").strip()
-        thread_del_employee.start()
+        threading.Thread(target=delete_employee, daemon=True).start()
 # Kết thúc chương trình
 request_queue.put(None)  # Để dừng thread xử lý request
 cap.release()
