@@ -100,7 +100,7 @@ def detect_face_crop(frame, collecting=False, show_face_mesh=False):
                                         mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=1))
             
             cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-            face_img = rgb_frame[y_min:y_max, x_min:x_max]
+            face_img = frame[y_min:y_max, x_min:x_max]
             cv2.resize(face_img, (160, 160))
             if collecting:
                 position = get_head_pose(landmarks, frame.shape)
