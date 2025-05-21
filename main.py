@@ -8,6 +8,8 @@ from consts import TENANT_CD, GEO_POINT_ID, BRANCH_ID, PADDING, STRAIGHT, LEFT, 
 from utils import get_head_pose
 import json
 
+from video_stream import VideoStream
+
 LOCKED = False
 SHOW_FACEMESH = False
 COLLECTING = False
@@ -16,16 +18,16 @@ FPS = 24
 prev_time = 0
 # Khởi tạo MediaPipe Face Landmark để trích xuất đặc điểm khuôn mặt
 mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5, 
+face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5, static_image_mode=False,
                                    max_num_faces=3)
-face_mesh_one = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+face_mesh_one = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5, static_image_mode=False)
 
 mp_drawing = mp.solutions.drawing_utils
 
 # Mở camera
-cap = cv2.VideoCapture(0)
-cap.set(3, 320)
-cap.set(4, 240)
+# cap = cv2.VideoCapture(0)
+# cap.set(3, 320)
+# cap.set(4, 240)
 
 # Biến lưu kết quả nhận diện từ chế độ nhận dạng (mode nhận diện thường)
 request_queue = queue.Queue()  # Hàng đợi request cho nhận diện
@@ -218,15 +220,16 @@ thread.start()
 # thread_del_employee = threading.Thread(target=delete_employee, daemon=True)
 
 print("Nhấn 'a' để thêm nhân viên mới, 'q' để thoát.")
-while cap.isOpened():
+vs = VideoStream("rtsp://user:pass@ip:port/...")
+while True:
     current_time = time.time()
     # Gioi han FPS
     if current_time - prev_time < 1 / FPS:
         continue
     prev_time = current_time
-    ret, frame = cap.read()
+    ret, frame = vs.read()
     if not ret:
-        break    
+        continue    
 
     face_imgs = detect_face_crop(frame, collecting = COLLECTING, show_face_mesh=SHOW_FACEMESH)
     if COLLECTING:
@@ -264,5 +267,6 @@ while cap.isOpened():
         threading.Thread(target=delete_employee, daemon=True).start()
 # Kết thúc chương trình
 request_queue.put(None)  # Để dừng thread xử lý request
-cap.release()
+# cap.release()
+vs.stop()
 cv2.destroyAllWindows()
