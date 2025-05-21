@@ -3,9 +3,12 @@ import mediapipe as mp
 import requests
 import queue
 import threading
-from consts import TENANT_CD, GEO_POINT_ID, BRANCH_ID, PADDING, STRAIGHT, LEFT, RIGHT, UP, DOWN, ADDRESS, HOST
+from consts import TENANT_CD, BRANCH_ID, PADDING, STRAIGHT, LEFT, RIGHT, UP, DOWN, ADDRESS, HOST, OFBIZ_HOST
 from utils import get_head_pose
 import json
+from session_manager import SessionManager
+
+session = requests.Session()
 
 GAP_TIME = 1
 LOCKED = False
@@ -19,9 +22,6 @@ face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_con
 face_mesh_one = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
 mp_drawing = mp.solutions.drawing_utils
-
-# Mở camera
-cap = cv2.VideoCapture(0)
 
 # Biến lưu kết quả nhận diện từ chế độ nhận dạng (mode nhận diện thường)
 request_queue = queue.Queue()  # Hàng đợi request cho nhận diện
@@ -52,7 +52,7 @@ def send_to_server():
         print(f'Send {len(files)} images to server')
         LOCKED = True
         try:
-            response = requests.post(f"{HOST}/recognize", 
+            response = session.post(f"{HOST}/recognize", 
                                     files=files,
                                     data={
                                         "tenant_cd": TENANT_CD,
@@ -138,7 +138,7 @@ def add_employee():
         "tenant_cd": TENANT_CD,
     }
     try:
-        response = requests.post(f"{HOST}/add_employee", files=files, data=data)
+        response = session.post(f"{HOST}/add_employee", files=files, data=data)
         if response.status_code != 200:
             print("Error:", response.status_code, response.text)
         else:
@@ -157,7 +157,7 @@ def delete_employee():
     if not del_emp_id:
         return
     try:
-        response = requests.delete(f"{HOST}/delete_employee/{TENANT_CD}/{del_emp_id}")
+        response = session.delete(f"{HOST}/delete_employee/{TENANT_CD}/{del_emp_id}")
         if response.status_code != 200:
             print("Error:", response.status_code, response.text)
         else:
@@ -206,13 +206,18 @@ def putTextByFaceDirect(frame):
 def putText2Frame(frame, text, color=(0, 255, 0)):
     cv2.putText(frame, text, (10, 30), cv2.FONT_HERSHEY_DUPLEX, 1, color, 2)
 
+print('Đăng nhập')
+user_name = input("Tên đăng nhập: ").strip()
+password = input("Mật khẩu: ").strip()
+
+session = SessionManager.get_session(user_name, password)
+
 # Khởi chạy thread gửi request
 thread = threading.Thread(target=send_to_server, daemon=True)
 thread.start()
 
-# thread_add_employee = threading.Thread(target=add_employee, daemon=True)
-# thread_del_employee = threading.Thread(target=delete_employee, daemon=True)
-
+# Mở camera
+cap = cv2.VideoCapture(0)
 print("Nhấn 'a' để thêm nhân viên mới, 'q' để thoát.")
 while cap.isOpened():
     ret, frame = cap.read()
