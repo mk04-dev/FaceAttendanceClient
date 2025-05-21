@@ -1,3 +1,4 @@
+import time
 import cv2
 import mediapipe as mp
 import requests
@@ -7,11 +8,12 @@ from consts import TENANT_CD, GEO_POINT_ID, BRANCH_ID, PADDING, STRAIGHT, LEFT, 
 from utils import get_head_pose
 import json
 
-GAP_TIME = 1
 LOCKED = False
 SHOW_FACEMESH = False
 COLLECTING = False
 
+FPS = 24
+prev_time = 0
 # Khởi tạo MediaPipe Face Landmark để trích xuất đặc điểm khuôn mặt
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5, 
@@ -22,6 +24,8 @@ mp_drawing = mp.solutions.drawing_utils
 
 # Mở camera
 cap = cv2.VideoCapture(0)
+cap.set(3, 320)
+cap.set(4, 240)
 
 # Biến lưu kết quả nhận diện từ chế độ nhận dạng (mode nhận diện thường)
 request_queue = queue.Queue()  # Hàng đợi request cho nhận diện
@@ -215,19 +219,18 @@ thread.start()
 
 print("Nhấn 'a' để thêm nhân viên mới, 'q' để thoát.")
 while cap.isOpened():
+    current_time = time.time()
+    # Gioi han FPS
+    if current_time - prev_time < 1 / FPS:
+        continue
+    prev_time = current_time
     ret, frame = cap.read()
     if not ret:
-        break
-
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = face_mesh.process(rgb_frame)
+        break    
 
     face_imgs = detect_face_crop(frame, collecting = COLLECTING, show_face_mesh=SHOW_FACEMESH)
     if COLLECTING:
         putTextByFaceDirect(frame)
-        # count = len(image_to_save)
-        # cv2.putText(frame, f"Captured {count} image{'s' if count > 1 else ''}", (10, 30),
-        #     cv2.FONT_HERSHEY_DUPLEX, 1, (0, 255, 0), 2)
     elif face_imgs is not None:
         if not LOCKED:
             request_queue.put(face_imgs)
