@@ -1,14 +1,11 @@
 import cv2
 import mediapipe as mp
-import requests
 import queue
 import threading
 from consts import TENANT_CD, BRANCH_ID, PADDING, STRAIGHT, LEFT, RIGHT, UP, DOWN, ADDRESS, HOST, OFBIZ_HOST
 from utils import get_head_pose
 import json
 from session_manager import SessionManager
-
-session = requests.Session()
 
 GAP_TIME = 1
 LOCKED = False
@@ -38,7 +35,7 @@ recorgnized = ''
 
 def send_to_server():
     """Gửi ảnh lên server từ queue để nhận diện khuôn mặt"""
-    global LOCKED, recorgnized
+    global LOCKED, recorgnized, user_name, password
     while True:
         face_imgs = request_queue.get()
         if face_imgs is None or LOCKED:
@@ -52,6 +49,7 @@ def send_to_server():
         print(f'Send {len(files)} images to server')
         LOCKED = True
         try:
+            session = SessionManager.get_session(user_name, password)
             response = session.post(f"{HOST}/recognize", 
                                     files=files,
                                     data={
@@ -119,7 +117,7 @@ def detect_face_crop(frame, collecting=False, show_face_mesh=False):
     return None
 
 def add_employee():
-    global new_employee_id, image_to_save
+    global new_employee_id, image_to_save, user_name, password
     """
     Gửi request thêm nhân viên mới đến server.
     - party_id: mã nhân viên.
@@ -138,6 +136,7 @@ def add_employee():
         "tenant_cd": TENANT_CD,
     }
     try:
+        session = SessionManager.get_session(user_name, password)
         response = session.post(f"{HOST}/add_employee", files=files, data=data)
         if response.status_code != 200:
             print("Error:", response.status_code, response.text)
@@ -149,7 +148,7 @@ def add_employee():
         clear_data_to_add()
 
 def delete_employee():
-    global del_emp_id
+    global del_emp_id, user_name, password
     """
     Gửi request xóa nhân viên đến server.
     - party_id: mã nhân viên.
@@ -157,6 +156,7 @@ def delete_employee():
     if not del_emp_id:
         return
     try:
+        session = SessionManager.get_session(user_name, password)
         response = session.delete(f"{HOST}/delete_employee/{TENANT_CD}/{del_emp_id}")
         if response.status_code != 200:
             print("Error:", response.status_code, response.text)
@@ -209,8 +209,6 @@ def putText2Frame(frame, text, color=(0, 255, 0)):
 print('Đăng nhập')
 user_name = input("Tên đăng nhập: ").strip()
 password = input("Mật khẩu: ").strip()
-
-session = SessionManager.get_session(user_name, password)
 
 # Khởi chạy thread gửi request
 thread = threading.Thread(target=send_to_server, daemon=True)
