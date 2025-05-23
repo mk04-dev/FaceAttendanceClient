@@ -6,7 +6,7 @@ UP = 'Up'
 DOWN = 'Down'
 RLEFT = 'RLeft'
 RRIGHT = 'RRight'
-
+CAMERA_ADDRESS = "rtsp://user:pass@ip:port/..." # Chinh sua theo tung cam
 
 # Cau hinh cho tung chi nhah
 HOST = "http://localhost:5000"

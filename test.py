@@ -1,47 +1,46 @@
+
 import cv2
 import mediapipe as mp
 import os
-cap = cv2.VideoCapture(0)
-# Khởi tạo MediaPipe Face Landmark để trích xuất đặc điểm khuôn mặt
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5, 
-                                   max_num_faces=1)
+
+from consts import PADDING
+
+# Khởi tạo face detection
+mp_face_detection = mp.solutions.face_detection
 mp_drawing = mp.solutions.drawing_utils
 
-count = 0
-empId = ''
+# Đường dẫn ảnh cần xử lý
+IMAGE_PATH = "image_path"
 
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
-    
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = face_mesh.process(rgb_frame)
+# Tạo thư mục lưu ảnh cắt
+os.makedirs("faces", exist_ok=True)
 
-    if results.multi_face_landmarks:
-        h, w, _ = frame.shape
-        landmarks = results.multi_face_landmarks[0].landmark
-        xs = [int(lm.x * w) for lm in landmarks]
-        ys = [int(lm.y * h) for lm in landmarks]
-        x_min, x_max = max(min(xs) - 20, 0), min(max(xs) + 20, w)
-        y_min, y_max = max(min(ys) - 20, 0), min(max(ys) + 20, h)
+# Đọc ảnh
+image = cv2.imread(IMAGE_PATH)
+h, w, _ = image.shape
 
-        cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-        face_img = rgb_frame[y_min:y_max, x_min:x_max]
+with mp_face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5) as face_detection:
+    # Chuyển sang RGB
+    results = face_detection.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
 
-    cv2.imshow("Face Detection", frame)
-    key = cv2.waitKey(1) & 0xFF
-    if key == ord('q'):
-        break
-    if key == ord('a'):
-        new_name = input("Nhập tên nhân viên mới: ").strip()
-        empId = new_name
-    if key == ord('s'):
-        if empId == '':
-            print("Chưa nhập tên nhân viên mới.")
-            continue
-        if not os.path.exists(f"./data/{empId}"):
-            os.makedirs(f"./data/{empId}")
-        count += 1
-        cv2.imwrite(f"./data/{empId}/{empId}_{count}.jpg", face_img)
+    if results.detections:
+        for i, detection in enumerate(results.detections):
+            # Lấy box: x_center, y_center, width, height (tính theo tỷ lệ)
+            bboxC = detection.location_data.relative_bounding_box
+            x1 = max(int(bboxC.xmin * w), 0)
+            y1 = max(int(bboxC.ymin * h), 0)
+            x2 = min(int((bboxC.xmin + bboxC.width) * w), w)
+            y2 = min(int((bboxC.ymin + bboxC.height) * h), h)
+
+            # Cắt gương mặt và lưu lại
+            face = image[y1:y2, x1:x2]
+            cv2.imwrite(f"faces/face_{i+1}.jpg", face)
+            print(f"Đã lưu face_{i+1}.jpg")
+
+    else:
+        print("Không phát hiện gương mặt nào.")
+
+# Hiển thị ảnh nếu muốn
+# cv2.imshow("Image", image)
+# cv2.waitKey(0)
+# cv2.destroyAllWindows()

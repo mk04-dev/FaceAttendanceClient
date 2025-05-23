@@ -3,7 +3,7 @@ import cv2
 import mediapipe as mp
 import queue
 import threading
-from consts import TENANT_CD, BRANCH_ID, PADDING, STRAIGHT, LEFT, RIGHT, UP, DOWN, ADDRESS, HOST, OFBIZ_HOST
+from consts import TENANT_CD, BRANCH_ID, PADDING, STRAIGHT, LEFT, RIGHT, UP, DOWN, ADDRESS, HOST, CAMERA_ADDRESS
 from utils import get_head_pose
 import json
 from session_manager import SessionManager
@@ -18,16 +18,11 @@ FPS = 24
 prev_time = 0
 # Khởi tạo MediaPipe Face Landmark để trích xuất đặc điểm khuôn mặt
 mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5, static_image_mode=False,
+face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5,
                                    max_num_faces=3)
-face_mesh_one = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5, static_image_mode=False)
+face_mesh_one = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
 mp_drawing = mp.solutions.drawing_utils
-
-# Mở camera
-# cap = cv2.VideoCapture(0)
-# cap.set(3, 320)
-# cap.set(4, 240)
 
 # Biến lưu kết quả nhận diện từ chế độ nhận dạng (mode nhận diện thường)
 request_queue = queue.Queue()  # Hàng đợi request cho nhận diện
@@ -228,9 +223,12 @@ thread = threading.Thread(target=send_to_server, daemon=True)
 thread.start()
 
 # Mở camera
-cap = cv2.VideoCapture(0)
 print("Nhấn 'a' để thêm nhân viên mới, 'q' để thoát.")
-vs = VideoStream("rtsp://user:pass@ip:port/...")
+# Mở camera
+# cap = cv2.VideoCapture(0)
+# cap.set(3, 320)
+# cap.set(4, 240)
+vs = VideoStream(CAMERA_ADDRESS)
 while True:
     current_time = time.time()
     # Gioi han FPS
