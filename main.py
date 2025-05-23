@@ -1,12 +1,12 @@
 import time
 import cv2
 import mediapipe as mp
-import requests
 import queue
 import threading
-from consts import TENANT_CD, GEO_POINT_ID, BRANCH_ID, PADDING, STRAIGHT, LEFT, RIGHT, UP, DOWN, ADDRESS, HOST
+from consts import TENANT_CD, BRANCH_ID, PADDING, STRAIGHT, LEFT, RIGHT, UP, DOWN, ADDRESS, HOST, OFBIZ_HOST
 from utils import get_head_pose
 import json
+from session_manager import SessionManager
 
 from video_stream import VideoStream
 
@@ -44,7 +44,7 @@ recorgnized = ''
 
 def send_to_server():
     """Gửi ảnh lên server từ queue để nhận diện khuôn mặt"""
-    global LOCKED, recorgnized
+    global LOCKED, recorgnized, user_name, password
     while True:
         face_imgs = request_queue.get()
         if face_imgs is None or LOCKED:
@@ -58,7 +58,8 @@ def send_to_server():
         print(f'Send {len(files)} images to server')
         LOCKED = True
         try:
-            response = requests.post(f"{HOST}/recognize", 
+            session = SessionManager.get_session(user_name, password)
+            response = session.post(f"{HOST}/recognize", 
                                     files=files,
                                     data={
                                         "tenant_cd": TENANT_CD,
@@ -70,10 +71,14 @@ def send_to_server():
                 print("Error:", response.status_code, response.text)
                 continue
             
-            results = response.json().get("results")
-            print("Nhân viên nhận diện:", results)
+            resutlt = response.json()
+            if resutlt.get('status') != 200:
+                print("Error:", resutlt.get('message'))
+                continue
+            data = resutlt.get("data")
+            print("Nhân viên nhận diện:", data)
             
-            recorgnized = ', '.join([x['party_id'] for x in results])
+            recorgnized = ', '.join([x['fullName'] for x in data])
         except Exception as e:
             recorgnized = 'Unknown'
             print("Error sending request:", e)
@@ -125,7 +130,7 @@ def detect_face_crop(frame, collecting=False, show_face_mesh=False):
     return None
 
 def add_employee():
-    global new_employee_id, image_to_save
+    global new_employee_id, image_to_save, user_name, password
     """
     Gửi request thêm nhân viên mới đến server.
     - party_id: mã nhân viên.
@@ -144,7 +149,8 @@ def add_employee():
         "tenant_cd": TENANT_CD,
     }
     try:
-        response = requests.post(f"{HOST}/add_employee", files=files, data=data)
+        session = SessionManager.get_session(user_name, password)
+        response = session.post(f"{HOST}/add_employee", files=files, data=data)
         if response.status_code != 200:
             print("Error:", response.status_code, response.text)
         else:
@@ -155,7 +161,7 @@ def add_employee():
         clear_data_to_add()
 
 def delete_employee():
-    global del_emp_id
+    global del_emp_id, user_name, password
     """
     Gửi request xóa nhân viên đến server.
     - party_id: mã nhân viên.
@@ -163,7 +169,8 @@ def delete_employee():
     if not del_emp_id:
         return
     try:
-        response = requests.delete(f"{HOST}/delete_employee/{TENANT_CD}/{del_emp_id}")
+        session = SessionManager.get_session(user_name, password)
+        response = session.delete(f"{HOST}/delete_employee/{TENANT_CD}/{del_emp_id}")
         if response.status_code != 200:
             print("Error:", response.status_code, response.text)
         else:
@@ -212,13 +219,16 @@ def putTextByFaceDirect(frame):
 def putText2Frame(frame, text, color=(0, 255, 0)):
     cv2.putText(frame, text, (10, 30), cv2.FONT_HERSHEY_DUPLEX, 1, color, 2)
 
+print('Đăng nhập')
+user_name = input("Tên đăng nhập: ").strip()
+password = input("Mật khẩu: ").strip()
+
 # Khởi chạy thread gửi request
 thread = threading.Thread(target=send_to_server, daemon=True)
 thread.start()
 
-# thread_add_employee = threading.Thread(target=add_employee, daemon=True)
-# thread_del_employee = threading.Thread(target=delete_employee, daemon=True)
-
+# Mở camera
+cap = cv2.VideoCapture(0)
 print("Nhấn 'a' để thêm nhân viên mới, 'q' để thoát.")
 vs = VideoStream("rtsp://user:pass@ip:port/...")
 while True:
