@@ -49,7 +49,7 @@ class SessionManager:
         token = auth_response.json().get("token")
 
         session = requests.Session()
-        session.headers.update({"Bearer": token})
+        session.headers.update({"Authorization": f"Bearer {token}"})
 
         token_expiry = SessionManager._decode_exp_from_token(token)
         return SessionWrapper(session, token_expiry)

@@ -62,10 +62,14 @@ def send_to_server():
                 print("Error:", response.status_code, response.text)
                 continue
             
-            results = response.json().get("results")
-            print("Nhân viên nhận diện:", results)
+            resutlt = response.json()
+            if resutlt.get('status') != 200:
+                print("Error:", resutlt.get('message'))
+                continue
+            data = resutlt.get("data")
+            print("Nhân viên nhận diện:", data)
             
-            recorgnized = ', '.join([x['party_id'] for x in results])
+            recorgnized = ', '.join([x['fullName'] for x in data])
         except Exception as e:
             recorgnized = 'Unknown'
             print("Error sending request:", e)
